@@ -1,63 +1,66 @@
-name: Release Management
-
+name: Build Release Archive
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
-      typeOfRelease:
-        description: 'Type of Release (major, minor, patch, custom)'
-        required: true
-        default: 'patch'
-        type: choice
-        options:
-        - major
-        - minor
-        - patch
-        - custom
       version:
-        description: 'Version of the release (only for custom release)'
-        required: false
-        type: string
-      releaseNotes:
-        description: 'Release notes'
+        description: 'Release version to publish. Leave blank to use the Git tag.'
         required: true
-        type: string
-      generateReleaseNotes:
-        description: 'Auto generate release notes'
+        default: '$previous_tag'
+      changelog:
+        description: 'Changelog text to add to the release description.'
         required: false
-        default: true
-        type: boolean
-      releaseDraft:
-        description: 'Release draft'
-        required: false
-        default: false
-        type: boolean
-      preRelease:
-        description: 'Pre-release'
-        required: false
-        default: false
-        type: boolean
-      targetCommitish:
-        description: 'Target commitish'
-        required: false
-        default: 'main'
+        default: ''
         type: string
 
+
+permissions:
+  contents: write
+
 jobs:
-  release:
+  build-release:
     runs-on: ubuntu-latest
+
     steps:
-    - name: Checkout
-      uses: actions/checkout@v3
-      with:
-        fetch-depth: 0
-    - name: Release Management
-      uses: Consuma/release-management@v1
-      with:
-        typeOfRelease: ${{ github.event.inputs.typeOfRelease }}
-        version: ${{ github.event.inputs.version }}
-        releaseNotes: ${{ github.event.inputs.releaseNotes }}
-        generateReleaseNotes: ${{ github.event.inputs.generateReleaseNotes }}
-        releaseDraft: ${{ github.event.inputs.releaseDraft }}
-        preRelease: ${{ github.event.inputs.preRelease }}
-        targetCommitish: ${{ github.event.inputs.targetCommitish }}
-        githubToken: ${{ secrets.GITHUB_TOKEN }}
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Find previous release tag
+        id: previous-tag
+        run: |
+          release_tag="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version != '' && github.event.inputs.version || github.ref_name }}"
+          previous_tag=$(git tag --sort=-v:refname | grep -xv "$release_tag" | head -n1 || true)
+          echo "previous_tag=$previous_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare release changelog
+        id: changelog
+        shell: bash
+        run: |   
+          changelog="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.changelog || '' }}"
+          echo "changelog<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$changelog" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Create release archive
+        run: |
+          mkdir -p dist
+          repo_name="$(basename "$GITHUB_WORKSPACE")"
+          zip -r "dist/Houdini-tools.zip" . \
+            -x '.git/*' '.github/*' 'dist/*' '**/.git*'
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version != '' && github.event.inputs.version || github.ref_name }}
+          name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version != '' && format('{0}', github.event.inputs.version) || format('{0}', github.ref_name) }}
+          previous_tag: ${{ steps.previous-tag.outputs.previous_tag }}
+          body: ${{ steps.changelog.outputs.changelog }}
+          files: dist/*.zip
+          draft: true
+          prerelease: false
+          generate_release_notes: true
