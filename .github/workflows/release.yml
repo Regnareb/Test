@@ -41,10 +41,14 @@ jobs:
         id: changelog
         shell: bash
         run: |
-          cat <<'__CHANGELOG__' >> "$GITHUB_OUTPUT"
-          changelog<<__CHANGELOG__
+          delimiter="$(openssl rand -hex 16)"
+          {
+            echo "changelog<<${delimiter}"
+            cat <<'EOF_RELEASE_CHANGELOG'
           ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.changelog || '' }}
-          __CHANGELOG__
+          EOF_RELEASE_CHANGELOG
+            echo "${delimiter}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Create release archive
         run: |
