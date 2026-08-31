@@ -41,14 +41,17 @@ jobs:
         id: changelog
         shell: bash
         run: |
-          delimiter="$(openssl rand -hex 16)"
-          {
-            echo "changelog<<${delimiter}"
-            cat <<'EOF_RELEASE_CHANGELOG'
-          ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.changelog || '' }}
-          EOF_RELEASE_CHANGELOG
-            echo "${delimiter}"
-          } >> "$GITHUB_OUTPUT"
+          python - <<'PY'
+          import os
+          changelog = """${{ github.event_name == 'workflow_dispatch' && github.event.inputs.changelog || '' }}"""
+          delimiter = "EOF_RELEASE_CHANGELOG_" + os.urandom(8).hex()
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"changelog<<{delimiter}\n")
+              fh.write(changelog)
+              if not changelog.endswith("\n"):
+                  fh.write("\n")
+              fh.write(f"{delimiter}\n")
+          PY
 
       - name: Create release archive
         run: |
