@@ -44,14 +44,22 @@ jobs:
           changelog="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.changelog || '' }}"
           echo "changelog<<EOF" >> "$GITHUB_OUTPUT"
           echo "$changelog" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Create release archive
         run: |
           mkdir -p dist
-          repo_name="$(basename "$GITHUB_WORKSPACE")"
-          zip -r "dist/Houdini-tools.zip" . \
-            -x '.git/*' '.github/*' 'dist/*' '**/.git*'
+          staging_dir="$(mktemp -d)"
+          trap 'rm -rf "$staging_dir"' EXIT
+
+          mkdir -p "$staging_dir/Houdini-tools"
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='dist' \
+            "$GITHUB_WORKSPACE/" "$staging_dir/Houdini-tools/"
+
+          cd "$staging_dir"
+          zip -r "$GITHUB_WORKSPACE/dist/Houdini-tools.zip" "Houdini-tools"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
