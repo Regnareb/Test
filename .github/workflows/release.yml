@@ -41,12 +41,10 @@ jobs:
         id: changelog
         shell: bash
         run: |
-          changelog="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.changelog || '' }}"
-          {
-            echo "changelog<<EOF"
-            printf '%s\n' "$changelog"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+          cat <<'__CHANGELOG__' >> "$GITHUB_OUTPUT"
+          changelog<<__CHANGELOG__
+          ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.changelog || '' }}
+          __CHANGELOG__
 
       - name: Create release archive
         run: |
