@@ -14,10 +14,6 @@ on:
           - integration
           - all
         required: true
-      environment:
-        description: 'Deployment target'
-        type: environment
-        required: true
       build-number:
         description: 'Custom build number'
         type: number
