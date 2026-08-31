@@ -1,45 +1,66 @@
-name: Triggered Workflow with Various Inputs
+name: Build Release Archive
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
-      run-tests:
-        description: 'Run unit tests'
-        required: false
-        type: boolean
-      test-type:
-        description: 'Type of tests to run'
-        type: choice
-        options:
-          - unit
-          - integration
-          - all
+      version:
+        description: 'Release version to publish. Leave blank to use the Git tag.'
         required: true
-      build-number:
-        description: 'Custom build number'
-        type: number
-        required: false
-      message:
-        description: 'Additional message'
+        default: 'v'
+      changelog:
+        description: 'Changelog text to add to the release description.'
+        required: true
+        default: ''
         type: string
-        required: false
+
+
+permissions:
+  contents: write
 
 jobs:
-  build-and-deploy:
+  build-release:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Print workflow inputs
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Find previous release tag
+        id: previous-tag
         run: |
-          echo "Run tests: ${{ inputs.run-tests }}"
-          echo "Test type: ${{ inputs.test-type }}"
-          echo "Environment: ${{ inputs.environment }}"
-          echo "Build number: ${{ inputs.build-number }}"
-          echo "Message: ${{ inputs.message }}"
+          release_tag="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version != '' && github.event.inputs.version || github.ref_name }}"
+          previous_tag=$(git tag --sort=-v:refname | grep -xv "$release_tag" | head -n1 || true)
+          echo "previous_tag=$previous_tag" >> "$GITHUB_OUTPUT"
 
-      - name: Run tests (if selected)
-        if: ${{ inputs.run-tests }}
-        run: echo "Running tests..."
+      - name: Prepare release changelog
+        id: changelog
+        shell: bash
+        run: |
+          changelog="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.changelog || '' }}"
+          {
+            printf '%s\n' "$changelog"
+          } >> "$GITHUB_OUTPUT"
 
-      # Uncomment to deploy based on the selected environment
-      # - name: Deploy to ${{ inputs.environment }}
-      #   environment: ${{ inputs.environment }}
-      #   run: echo "Deploying to ${{ inputs.environment }}"
+      - name: Create release archive
+        run: |
+          mkdir -p dist
+          repo_name="$(basename "$GITHUB_WORKSPACE")"
+          zip -r "dist/Houdini-tools.zip" . \
+            -x '.git/*' '.github/*' 'dist/*' '**/.git*'
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version != '' && github.event.inputs.version || github.ref_name }}
+          name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version != '' && format('{0}', github.event.inputs.version) || format('{0}', github.ref_name) }}
+          previous_tag: ${{ steps.previous-tag.outputs.previous_tag }}
+          body: ${{ steps.changelog.outputs.changelog }}
+          files: dist/*.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: true
